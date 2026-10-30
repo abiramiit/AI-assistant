@@ -1,0 +1,36 @@
+{
+  "name": "local-ai-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "build:electron": "tsc electron/main.ts electron/preload.ts --outDir dist-electron --target ES2022 --module CommonJS --moduleResolution node --esModuleInterop --skipLibCheck",
+    "build:vite": "vite build",
+    "build": "npm run build:vite && npm run build:electron",
+    "vite": "vite",
+    "electron": "wait-on http://localhost:5173 && electron .",
+    "dev": "npm run build:electron && concurrently -k \"npm run vite\" \"npm run electron\"",
+    "start-py": "C:\\Users\\abira\\AppData\\Local\\Programs\\Python\\Python312\\python.exe python-service/run.py",
+    "install-models": "C:\\Users\\abira\\AppData\\Local\\Programs\\Python\\Python312\\python.exe -c \"import faster_whisper; faster_whisper.WhisperModel('base.en')\" && ollama pull qwen2.5:3b"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/node-fetch": "^2.6.4",
+    "@types/react": "^18.0.28",
+    "@types/react-dom": "^18.0.11",
+    "@types/ws": "^8.5.10",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^8.2.2",
+    "electron": "^28.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.2.2",
+    "vite": "^5.0.0",
+    "wait-on": "^7.2.0"
+  }
+}

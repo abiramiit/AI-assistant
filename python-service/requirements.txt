@@ -1,0 +1,5 @@
+fastapi[all]
+uvicorn
+sounddevice
+numpy
+faster-whisper
