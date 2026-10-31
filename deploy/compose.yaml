@@ -1,0 +1,147 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?Set PUBLIC_DOMAIN in .env to a DNS name pointing at this server}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      frontend:
+        condition: service_healthy
+    networks:
+      edge:
+        ipv4_address: 172.30.0.2
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:2019/config/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/frontend.Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://${PUBLIC_DOMAIN}}
+        VITE_WS_URL: ${VITE_WS_URL:-wss://${PUBLIC_DOMAIN}/ws}
+    expose:
+      - "8080"
+    volumes:
+      - ./.htpasswd:/etc/nginx/.htpasswd:ro
+    depends_on:
+      speech:
+        condition: service_healthy
+    networks:
+      edge:
+        ipv4_address: 172.30.0.3
+      internal: {}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/nginx-health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  speech:
+    build:
+      context: ..
+      dockerfile: deploy/speech.Dockerfile
+    environment:
+      ALLOWED_ORIGINS: https://${PUBLIC_DOMAIN:?Set PUBLIC_DOMAIN in .env}
+      ENABLE_DEVICE_CAPTURE: "false"
+      HF_HOME: /models/huggingface
+      MAX_CONCURRENT_SESSIONS: ${MAX_CONCURRENT_SESSIONS:-8}
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
+      OLLAMA_TIMEOUT_SECONDS: ${OLLAMA_TIMEOUT_SECONDS:-180}
+      PYTHONUNBUFFERED: "1"
+      WHISPER_COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-float16}
+      WHISPER_DEVICE: ${WHISPER_DEVICE:-cuda}
+      WHISPER_MODEL: ${WHISPER_MODEL:-base.en}
+    expose:
+      - "8765"
+    volumes:
+      - whisper_models:/models/huggingface
+    networks:
+      - internal
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5m
+
+  ollama:
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+    expose:
+      - "11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - internal
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "OLLAMA_HOST=127.0.0.1:11434 ollama list >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  ollama-model:
+    image: ollama/ollama:latest
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - "ollama pull \"$${OLLAMA_MODEL}\""
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - internal
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+  internal:
+volumes:
+  caddy_data:
+  caddy_config:
+  ollama_models:
+  whisper_models:
